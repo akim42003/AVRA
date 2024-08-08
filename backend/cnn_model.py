@@ -7,6 +7,7 @@ from PIL import Image
 from collections import Counter
 import numpy as np
 import torch.nn.functional as F
+import requests  # To send data to the backend
 
 # CNN model definition
 class StandardCNN(nn.Module):
@@ -54,7 +55,7 @@ def sliding_window_classification_cnn(spectrogram, window_height, window_width, 
         with torch.no_grad():
             output = cnn_model(image)
             _, predicted = torch.max(output.data, 1)
-            predictions.append(((x + (window_width//2)), predicted.item()))
+            predictions.append(((x + (window_width // 2)), predicted.item()))
 
     return predictions
 
@@ -83,6 +84,50 @@ def detect_transitions(predictions, pixels_per_threshold, step_size):
             diff_predictions.clear()
 
     return transitions
+
+def calculate_register_frequency(predictions):
+    counts = Counter([pred[1] for pred in predictions])
+    total = sum(counts.values())
+    frequencies = {int(label): count / total for label, count in counts.items()}
+    return frequencies
+
+def calculate_label_stability(predictions, step_size):
+    stability_scores = {}
+    current_label = int(predictions[0][1])  # Convert the initial label to an int
+    current_streak = step_size
+
+    for i in range(1, len(predictions)):
+        label = int(predictions[i][1])  # Convert each label to an int
+        
+        if label == current_label:
+            current_streak += step_size
+        else:
+            if current_label not in stability_scores:
+                stability_scores[current_label] = 0
+            stability_scores[current_label] += current_streak
+
+            # Reset for new label
+            current_label = label
+            current_streak = step_size
+
+    # Final update for the last streak
+    if current_label not in stability_scores:
+        stability_scores[current_label] = 0
+    stability_scores[current_label] += current_streak
+
+    return stability_scores
+
+def send_analytics_to_backend(frequencies, stability):
+    backend_url = 'http://127.0.0.1:5001/save-analytics'  # Update with your backend URL
+    data = {
+        'frequencies': frequencies,
+        'stability': stability
+    }
+    response = requests.post(backend_url, json=data)
+    if response.status_code == 200:
+        print("Analytics data sent successfully")
+    else:
+        print(f"Failed to send analytics data: {response.status_code}, {response.text}")
 
 def main():
     cnn_model_path = 'simple_cnn.pth'
@@ -117,14 +162,31 @@ def main():
 
     transitions = detect_transitions(predictions, pixels_per_threshold, step_size)
 
+    # Calculate and print register frequencies
+    frequencies = calculate_register_frequency(predictions)
+    print("Frequencies of Vocal Registers:", frequencies)
+
+    # Calculate and print label stability
+    stability = calculate_label_stability(predictions, step_size)
+    print("Label Stability Scores:", stability)
+
+    # Send analytics data to the backend
+    send_analytics_to_backend(frequencies, stability)
+
     # Visualize predictions
     for x, pred_class in predictions:
         # Annotate each prediction with its class
         cv2.putText(spectrogram_color, str(pred_class), (x, window_height - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1, cv2.LINE_AA)
 
-    # Visualize transitions with time annotations
+        # Visualize transitions with time annotations
     for x, prev_class, new_class in transitions:
+        # Calculate the time of the transition
+        # transition_time = x * 3
+        # Draw vertical lines at the transition points
         cv2.line(spectrogram_color, (x , 0), (x, window_height), (0, 255, 0), 2)
+        # # Annotate the transition with time and class change
+        # annotation = f'{prev_class}->{new_class}'
+        # cv2.putText(spectrogram_color, annotation, (x, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
 
     # Visualize majority class per transition segment
     for i in range(len(transitions)):
@@ -132,12 +194,20 @@ def main():
             start_pos = 0
 
         end_pos = transitions[i][0]
-        middle_pos = ((end_pos - start_pos) // 2) + start_pos
+        middle_pos = ((end_pos-start_pos) // 2) + start_pos
         majority_class = transitions[i][2]
-        cv2.putText(spectrogram_color, f'Majority: {majority_class}', (end_pos - pixels_per_threshold, window_height // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+        if majority_class == 0:
+            majority_class = 'Chest'
+        elif majority_class == 1:
+            majority_class = 'Mix'
+        elif majority_class == 2:
+            majority_class = 'Head Mix'
+        elif majority_class == 3:
+            majority_class = 'Head'
+        cv2.putText(spectrogram_color, f'Majority: {majority_class}', (middle_pos - pixels_per_threshold, window_height // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
         start_pos = end_pos
 
-    cv2.putText(spectrogram_color, 'End of Analysis', (total_width - 128 - pixels_per_threshold, window_height // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+    cv2.putText(spectrogram_color, 'End of Analysis', (total_width - 128 - pixels_per_threshold, window_height//2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
 
     image_path = os.path.join(output_dir, 'marked_spectrogram.png')
     cv2.imwrite(image_path, spectrogram_color)

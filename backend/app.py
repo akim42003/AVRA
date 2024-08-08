@@ -14,6 +14,11 @@ MARKED_SPECTROGRAM_FOLDER = '../frontend/src/spectrogram'
 MARKED_SPECTROGRAM_FILE = 'marked_spectrogram.png'
 DB_FILE = 'audio_spectrogram.db'
 
+analytics_data = {
+    'frequencies': {},
+    'stability': {}
+}
+
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Ensure all directories exist
@@ -54,6 +59,30 @@ def save_region():
 
     # Return the filename of the marked spectrogram
     return jsonify({"message": "Region saved successfully", "start": start, "end": end, "file": MARKED_SPECTROGRAM_FILE})
+
+@app.route('/save-analytics', methods=['POST'])
+def save_analytics():
+    global analytics_data
+    data = request.json
+    frequencies = data.get('frequencies')
+    stability = data.get('stability')
+
+    app.logger.debug(f"Received analytics data: Frequencies: {frequencies}, Stability: {stability}")
+
+    # Save the analytics data to the global variable
+    analytics_data = {
+        'frequencies': frequencies,
+        'stability': stability
+    }
+
+    app.logger.info(f"Frequencies: {frequencies}")
+    app.logger.info(f"Stability: {stability}")
+
+    return jsonify({"message": "Analytics data received successfully"}), 200
+
+@app.route('/api/analytics', methods=['GET'])
+def get_analytics():
+    return jsonify(analytics_data), 200
 
 @app.route('/upload-file', methods=['POST'])
 def upload_file():

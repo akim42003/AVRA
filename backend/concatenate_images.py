@@ -1,4 +1,5 @@
 from PIL import Image
+from PIL import ImageDraw
 import os
 import sys
 from db.db_utils import get_spectrogram_segments
@@ -25,9 +26,9 @@ def concatenate_images(start, end, stop):
 
     print(f"Concatenating images from {start} to {end}")
     image_dir = './split_spectrograms'
-
+    
     base_idx = float(start) // 3
-    base_len = ((float(end) - float(start)) // 3) + 1
+    base_len = int(((float(end) - float(start)) / 3)) + 1
     db_data = get_spectrogram_segments(base_idx, (base_idx + base_len))
     print(db_data)
     base_metadata = db_data[0][0]
@@ -59,6 +60,16 @@ def concatenate_images(start, end, stop):
         concatenated_image.paste(img, (x_offset, 0))
         x_offset += img.width
 
+    # sec_pixels = []
+    I1 = ImageDraw.Draw(concatenated_image)
+    I1.text((20,10), "Time(seconds)", fill = (0,255,0))
+    I1.text((20,20), str(base_idx*3), fill = (0,255,0))
+    num_secs = int((base_len)*3)
+    for s in range(1, num_secs):
+        sec_pixels = (int((total_width/(base_len*3))*s))
+        I1.text((sec_pixels, 20), str((base_idx*3)+s), fill = (0,255,0))
+    #     I1.text(((int((total_width/(base_len*3))*s)), 20), str((base_idx*3)+s), fill = (0,255,0))
+    I1.text((total_width - 60, 20), str((base_idx+base_len)*3), fill = (0,255,0))
     check_files()
     print('Files checked')
     concatenated_image.save('./marked_spectrogram/concatenated_image.png')
