@@ -84,6 +84,7 @@ AVRA/
    python app.py
    ```
    The backend will run on `http://localhost:5001`
+   Use 5001 for Docker port
 
 ### Frontend Setup
 1. Navigate to the frontend directory:
